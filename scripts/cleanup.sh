@@ -5,6 +5,13 @@ log_info()  { echo "::notice::[cleanup] $*"; }
 log_warn()  { echo "::warning::[cleanup] $*"; }
 log_error() { echo "::error::[cleanup] $*"; }
 
+sanitize_name() {
+  echo "$1" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed 's/[^a-z0-9-]/-/g' \
+    | sed 's/^-*//; s/-*$//'
+}
+
 NAMESPACE="${INPUT_NAMESPACE:-default}"
 JOB_NAME="${JOB_NAME:-}"
 JOB_STATUS="${JOB_STATUS:-unknown}"
@@ -13,17 +20,14 @@ NNODES="${INPUT_NNODES:-0}"
 SOURCE_STAGE_DIR="${SOURCE_STAGE_DIR:-}"
 
 if [ -z "$JOB_NAME" ]; then
-  log_warn "未提供 job 名称，跳过清理。"
-  # 即使无 job 名称也清理 NAS 暂存 tarball
-  if [ -n "${SOURCE_STAGE_DIR:-}" ] && [ -f "$SOURCE_STAGE_DIR" ]; then
-    log_info "清理 NAS 源码暂存 tarball: $SOURCE_STAGE_DIR"
-    rm -f "$SOURCE_STAGE_DIR"
-    _parent_dir="$(dirname "$SOURCE_STAGE_DIR")"
-    if [ -d "$_parent_dir" ] && [ -z "$(ls -A "$_parent_dir" 2>/dev/null)" ]; then
-      rmdir "$_parent_dir" 2>/dev/null || true
-    fi
-  fi
-  exit 0
+  # 兜底计算：按 submit.sh 同样的命名约定重新计算 JOB_NAME
+  _owner=$(sanitize_name "${GITHUB_REPOSITORY_OWNER:-unknown}" | cut -c1-20 | sed 's/-*$//')
+  _run_id="${GITHUB_RUN_ID:-0}"
+  _run_attempt="${GITHUB_RUN_ATTEMPT:-1}"
+  _job_suffix=$(sanitize_name "${GITHUB_JOB_NAME:-job}" | cut -c1-20 | sed 's/-*$//')
+  JOB_NAME="ppu-${_owner}-${_run_id}-${_run_attempt}-${_job_suffix}"
+  JOB_NAME=$(echo "$JOB_NAME" | cut -c1-63 | sed 's/-*$//')
+  log_warn "submit 步骤未输出 job_name，使用兜底计算: $JOB_NAME"
 fi
 
 # NAS 源码暂存 tarball 始终清理（无论 cleanup_policy，因为只是临时中转存储）

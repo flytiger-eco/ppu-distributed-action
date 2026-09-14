@@ -109,6 +109,23 @@ if [ -n "$EXTRA_ENV" ]; then
   EXTRA_ENV_YAML="${EXTRA_ENV_YAML%$'\n'}"
 fi
 
+# --- 从当前环境继承代理变量，注入 worker pod ---
+# ARC Runner 通过 hook-extension-cpu ConfigMap 注入了代理变量，
+# 这里将非空的代理变量透传给 worker pod，避免直连外网被 WAF 403。
+# 放在 EXTRA_ENV_YAML 之前，用户可通过 extra_env 覆盖代理设置。
+PROXY_ENV_YAML=""
+for _proxy_var in http_proxy https_proxy HTTP_PROXY HTTPS_PROXY no_proxy NO_PROXY; do
+  _proxy_val="${!_proxy_var:-}"
+  if [ -n "$_proxy_val" ]; then
+    PROXY_ENV_YAML+="        - name: ${_proxy_var}"$'\n'
+    PROXY_ENV_YAML+="          value: \"${_proxy_val}\""$'\n'
+  fi
+done
+PROXY_ENV_YAML="${PROXY_ENV_YAML%$'\n'}"
+if [ -n "$PROXY_ENV_YAML" ]; then
+  log_info "代理环境变量将注入 worker pod"
+fi
+
 NODE_SELECTOR_YAML=""
 if [ -n "$NODE_SELECTOR" ]; then
   _ns_items=""
@@ -465,6 +482,7 @@ ${SCRIPT_INDENTED}
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
+${PROXY_ENV_YAML}
 ${EXTRA_ENV_YAML}
       resources:
         requests:

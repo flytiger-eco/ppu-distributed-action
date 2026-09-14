@@ -274,4 +274,8 @@ runs:
         INPUT_NNODES: ${{ inputs.nnodes }}
         INPUT_CLEANUP_POLICY: ${{ inputs.cleanup_policy }}
         SOURCE_STAGE_DIR: ${{ env.SOURCE_STAGE_DIR }}
+        GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+        GITHUB_RUN_ID: ${{ github.run_id }}
+        GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        GITHUB_JOB_NAME: ${{ github.job }}
       run: bash "$GITHUB_ACTION_PATH/scripts/cleanup.sh"
