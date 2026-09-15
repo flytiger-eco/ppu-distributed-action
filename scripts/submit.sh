@@ -453,6 +453,10 @@ spec:
   restartPolicy: Never
 ${NODE_SELECTOR_YAML}
 ${POD_LEVEL_OPTIONS_YAML}
+  dnsConfig:
+    options:
+    - name: ndots
+      value: "2"
   containers:
     - name: worker
       image: ${IMAGE}
