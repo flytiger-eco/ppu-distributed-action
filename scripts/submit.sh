@@ -474,6 +474,11 @@ ${POD_LEVEL_OPTIONS_YAML}
     options:
     - name: ndots
       value: "2"
+    - name: single-request-reopen
+    - name: attempts
+      value: "3"
+    - name: timeout
+      value: "2"
   containers:
     - name: worker
       image: ${IMAGE}
