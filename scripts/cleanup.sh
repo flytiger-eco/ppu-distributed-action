@@ -14,8 +14,8 @@ sanitize_name() {
 
 NAMESPACE="${INPUT_NAMESPACE:-default}"
 JOB_NAME="${JOB_NAME:-}"
-JOB_STATUS="${JOB_STATUS:-unknown}"
-CLEANUP_POLICY="${INPUT_CLEANUP_POLICY:-on_success}"
+CLEANUP_POLICY="${INPUT_CLEANUP_POLICY:-always}"
+JOB_STATUS="${INPUT_JOB_STATUS:-}"
 NNODES="${INPUT_NNODES:-0}"
 SOURCE_STAGE_DIR="${SOURCE_STAGE_DIR:-}"
 
@@ -40,42 +40,26 @@ if [ -n "${SOURCE_STAGE_DIR:-}" ] && [ -f "$SOURCE_STAGE_DIR" ]; then
   fi
 fi
 
-log_info "评估清理: $JOB_NAME (status=$JOB_STATUS, policy=$CLEANUP_POLICY)"
+log_info "评估清理: $JOB_NAME (policy=$CLEANUP_POLICY)"
 
-SHOULD_CLEANUP=false
-case "$CLEANUP_POLICY" in
-  never)
-    log_info "policy=never，保留全部资源。"
-    ;;
-  always)
-    SHOULD_CLEANUP=true
-    log_info "policy=always，执行清理。"
-    ;;
-  on_success)
-    if [ "$JOB_STATUS" = "succeeded" ]; then
-      SHOULD_CLEANUP=true
-      log_info "作业成功且 policy=on_success，执行清理。"
-    else
-      log_info "作业非成功 (status=$JOB_STATUS)，policy=on_success，保留资源供调试。"
-    fi
-    ;;
-  on_failure)
-    if [ "$JOB_STATUS" != "succeeded" ]; then
-      SHOULD_CLEANUP=true
-      log_info "作业非成功 (status=$JOB_STATUS) 且 policy=on_failure，执行清理。"
-    else
-      log_info "作业成功，policy=on_failure，保留资源。"
-    fi
-    ;;
-  *)
-    log_warn "未知 cleanup_policy '$CLEANUP_POLICY'，保留资源。"
-    ;;
-esac
-
-if [ "$SHOULD_CLEANUP" = false ]; then
+if [ "$CLEANUP_POLICY" = "never" ]; then
+  log_info "policy=never，保留全部资源。"
   log_info "跳过清理。资源保留在 namespace: $NAMESPACE"
   log_info "查看: kubectl get pods -n $NAMESPACE -l ppu-job=$JOB_NAME"
   exit 0
+fi
+
+if [ "$CLEANUP_POLICY" = "on_success" ]; then
+  if [ "$JOB_STATUS" = "succeeded" ]; then
+    log_info "policy=on_success, status=$JOB_STATUS，作业成功，执行清理。"
+  else
+    log_info "policy=on_success, status=$JOB_STATUS，作业未成功，保留资源供调试。"
+    log_info "跳过清理。资源保留在 namespace: $NAMESPACE"
+    log_info "查看: kubectl get pods -n $NAMESPACE -l ppu-job=$JOB_NAME"
+    exit 0
+  fi
+else
+  log_info "policy=$CLEANUP_POLICY，执行清理。"
 fi
 
 POD_SELECTOR="ppu-job=$JOB_NAME"

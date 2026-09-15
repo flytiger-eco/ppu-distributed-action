@@ -50,7 +50,7 @@ inputs:
     default: '29500'
   cleanup_policy:
     description: >-
-      清理策略：on_success（成功后清理，失败保留调试）/ always（总是清理）/ never（从不清理）
+      清理策略：always（默认）总是清理 / on_success 仅作业成功时清理，失败时保留 Pod 供调试 / never 从不清理。
     required: false
     default: 'always'
   source_dir:
@@ -270,10 +270,10 @@ runs:
       shell: bash
       env:
         JOB_NAME: ${{ steps.submit.outputs.job_name }}
-        JOB_STATUS: ${{ steps.submit.outputs.job_status }}
         INPUT_NAMESPACE: ${{ inputs.namespace }}
         INPUT_NNODES: ${{ inputs.nnodes }}
         INPUT_CLEANUP_POLICY: ${{ inputs.cleanup_policy }}
+        INPUT_JOB_STATUS: ${{ steps.submit.outputs.job_status }}
         SOURCE_STAGE_DIR: ${{ env.SOURCE_STAGE_DIR }}
         GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
         GITHUB_RUN_ID: ${{ github.run_id }}
