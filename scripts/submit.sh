@@ -126,6 +126,23 @@ if [ -n "$PROXY_ENV_YAML" ]; then
   log_info "代理环境变量将注入 worker pod"
 fi
 
+# === 用户 workflow/job env 自动转发 ===
+USER_ENV_YAML=""
+if [[ -n "${USER_ENV_JSON:-}" && "${USER_ENV_JSON}" != "{}" && "${USER_ENV_JSON}" != "null" ]]; then
+  while IFS= read -r line; do
+    _key="${line%%=*}"
+    _val="${line#*=}"
+    if [[ -n "${_key}" ]]; then
+      USER_ENV_YAML+="        - name: \"${_key}\""$'\n'
+      USER_ENV_YAML+="          value: \"${_val}\""$'\n'
+    fi
+  done < <(echo "${USER_ENV_JSON}" | jq -r 'to_entries[] | "\(.key)=\(.value)"')
+  USER_ENV_YAML="${USER_ENV_YAML%$'\n'}"
+  if [[ -n "${USER_ENV_YAML}" ]]; then
+    log_info "用户 env 变量将注入 worker pod: $(echo "${USER_ENV_JSON}" | jq -r 'keys | join(", ")')"
+  fi
+fi
+
 NODE_SELECTOR_YAML=""
 if [ -n "$NODE_SELECTOR" ]; then
   _ns_items=""
@@ -487,6 +504,7 @@ ${SCRIPT_INDENTED}
             fieldRef:
               fieldPath: spec.nodeName
 ${PROXY_ENV_YAML}
+${USER_ENV_YAML}
 ${EXTRA_ENV_YAML}
       resources:
         requests:

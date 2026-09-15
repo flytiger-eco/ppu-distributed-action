@@ -262,6 +262,7 @@ runs:
         GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
         GITHUB_REPOSITORY: ${{ github.repository }}
         GITHUB_JOB_NAME: ${{ github.job }}
+        USER_ENV_JSON: ${{ toJSON(env) }}
       run: bash "$GITHUB_ACTION_PATH/scripts/submit.sh"
 
     - name: Cleanup resources
