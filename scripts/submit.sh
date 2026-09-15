@@ -26,6 +26,16 @@ sanitize_name() {
     | sed 's/^-*//; s/-*$//'
 }
 
+# YAML 双引号字符串转义：将值中的特殊字符转义后可安全嵌入 value: "..." 中
+yaml_escape_value() {
+  local val="$1"
+  val="${val//\\/\\\\}"       # \ → \\
+  val="${val//\"/\\\"}"       # " → \\"
+  val="${val//$'\n'/\\n}"     # 换行 → \n
+  val="${val//$'\t'/\\t}"     # tab → \t
+  printf '%s' "$val"
+}
+
 NNODES="${INPUT_NNODES:-0}"
 NPROC="${INPUT_NPROC_PER_NODE:-1}"
 
@@ -103,6 +113,7 @@ if [ -n "$EXTRA_ENV" ]; then
     _val="${_pair#*=}"
     _key=$(echo "$_key" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
     [ -z "$_key" ] && continue
+    _val=$(yaml_escape_value "$_val")
     EXTRA_ENV_YAML+="        - name: ${_key}"$'\n'
     EXTRA_ENV_YAML+="          value: \"${_val}\""$'\n'
   done
@@ -117,6 +128,7 @@ PROXY_ENV_YAML=""
 for _proxy_var in http_proxy https_proxy HTTP_PROXY HTTPS_PROXY no_proxy NO_PROXY; do
   _proxy_val="${!_proxy_var:-}"
   if [ -n "$_proxy_val" ]; then
+    _proxy_val=$(yaml_escape_value "$_proxy_val")
     PROXY_ENV_YAML+="        - name: ${_proxy_var}"$'\n'
     PROXY_ENV_YAML+="          value: \"${_proxy_val}\""$'\n'
   fi
@@ -131,12 +143,17 @@ USER_ENV_YAML=""
 if [[ -n "${USER_ENV_JSON:-}" && "${USER_ENV_JSON}" != "{}" && "${USER_ENV_JSON}" != "null" ]]; then
   while IFS= read -r line; do
     _key="${line%%=*}"
-    _val="${line#*=}"
-    if [[ -n "${_key}" ]]; then
-      USER_ENV_YAML+="        - name: \"${_key}\""$'\n'
-      USER_ENV_YAML+="          value: \"${_val}\""$'\n'
-    fi
-  done < <(echo "${USER_ENV_JSON}" | jq -r 'to_entries[] | "\(.key)=\(.value)"')
+    _b64val="${line#*=}"
+    [[ -z "${_key}" ]] && continue
+    # 跳过 action 内部变量，避免二次注入
+    case "$_key" in
+      INPUT_*|CONTAINER_OPTIONS|SOURCE_STAGE_DIR|USER_ENV_JSON|GITHUB_*) continue ;;
+    esac
+    _val=$(echo "${_b64val}" | base64 -d)
+    _val=$(yaml_escape_value "$_val")
+    USER_ENV_YAML+="        - name: \"${_key}\""$'\n'
+    USER_ENV_YAML+="          value: \"${_val}\""$'\n'
+  done < <(echo "${USER_ENV_JSON}" | jq -r 'to_entries[] | "\(.key)=\(.value | @base64)"')
   USER_ENV_YAML="${USER_ENV_YAML%$'\n'}"
   if [[ -n "${USER_ENV_YAML}" ]]; then
     log_info "用户 env 变量将注入 worker pod: $(echo "${USER_ENV_JSON}" | jq -r 'keys | join(", ")')"
