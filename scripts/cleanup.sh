@@ -14,8 +14,7 @@ sanitize_name() {
 
 NAMESPACE="${INPUT_NAMESPACE:-default}"
 JOB_NAME="${JOB_NAME:-}"
-CLEANUP_POLICY="${INPUT_CLEANUP_POLICY:-always}"
-JOB_STATUS="${INPUT_JOB_STATUS:-}"
+# cleanup_policy 已移除：无条件执行全量清理
 NNODES="${INPUT_NNODES:-0}"
 SOURCE_STAGE_DIR="${SOURCE_STAGE_DIR:-}"
 
@@ -40,27 +39,7 @@ if [ -n "${SOURCE_STAGE_DIR:-}" ] && [ -f "$SOURCE_STAGE_DIR" ]; then
   fi
 fi
 
-log_info "评估清理: $JOB_NAME (policy=$CLEANUP_POLICY)"
-
-if [ "$CLEANUP_POLICY" = "never" ]; then
-  log_info "policy=never，保留全部资源。"
-  log_info "跳过清理。资源保留在 namespace: $NAMESPACE"
-  log_info "查看: kubectl get pods -n $NAMESPACE -l ppu-job=$JOB_NAME"
-  exit 0
-fi
-
-if [ "$CLEANUP_POLICY" = "on_success" ]; then
-  if [ "$JOB_STATUS" = "succeeded" ]; then
-    log_info "policy=on_success, status=$JOB_STATUS，作业成功，执行清理。"
-  else
-    log_info "policy=on_success, status=$JOB_STATUS，作业未成功，保留资源供调试。"
-    log_info "跳过清理。资源保留在 namespace: $NAMESPACE"
-    log_info "查看: kubectl get pods -n $NAMESPACE -l ppu-job=$JOB_NAME"
-    exit 0
-  fi
-else
-  log_info "policy=$CLEANUP_POLICY，执行清理。"
-fi
+log_info "执行全量清理: $JOB_NAME (namespace=$NAMESPACE)"
 
 POD_SELECTOR="ppu-job=$JOB_NAME"
 
