@@ -10,6 +10,8 @@ containerMode:
   type: kubernetes-novolume
 template:
   spec:
+    nodeSelector:
+      server-type: cpu
     containers:
       - name: runner
         image: ghcr.io/actions/actions-runner:latest
