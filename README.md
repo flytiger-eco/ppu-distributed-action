@@ -15,7 +15,8 @@ All PPU resources are requested by the worker pods it creates.
 - Automatic source staging: `$GITHUB_WORKSPACE` (plus optional artifacts) is packed and
   extracted inside the worker pod.
 - Default CPU/memory limits derived from board type and card count.
-- Live log streaming, timeout handling, cancellation-safe cleanup.
+- Live log streaming, explicit pending status, timeout handling and cancellation-safe cleanup.
+- Job Summary reporting for queue time and occupied/execution PPU card-hours.
 - Optional kernel log (`dmesg`) collection from worker nodes.
 
 ## Usage
@@ -69,6 +70,7 @@ jobs:
 | `artifact_paths` | no | | Extra paths (one per line) staged with the source |
 | `job_suffix` | no | | Readable segment of resource names; a unique hash is always appended |
 | `dmesg_policy` | no | `never` | `never`, `on_failure` or `always` |
+| `summary_enabled` | no | `true` | Write status and PPU card-hours to the GitHub Job Summary |
 
 ### `container_options`
 
@@ -110,7 +112,14 @@ Variables declared in the workflow or job `env` context are forwarded automatica
 | `job_name` | Resource name of the job |
 | `job_status` | `succeeded`, `failed`, `timeout`, `cancelled` |
 | `duration_seconds` | Job duration |
+| `queue_duration_seconds` | Time until all PPU pods are scheduled |
+| `occupied_ppu_card_hours` | PPU card-hours from pod scheduling until completion, including image pulling and startup |
+| `execution_ppu_card_hours` | PPU card-hours while worker containers are running |
 | `task_pods` | Comma-separated worker pod names |
+
+The queue duration is measured from the first pod creation until every pod is scheduled. For a pod
+that never schedules, it is measured until the job ends. Both card-hours metrics sum each
+pod independently, so multi-node jobs are accounted for correctly.
 
 ## Repository layout
 

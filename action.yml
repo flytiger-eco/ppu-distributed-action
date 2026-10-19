@@ -104,6 +104,10 @@ inputs:
       always 无论结果均保留。日志按作业执行时间窗口保存到 NAS。
     required: false
     default: 'never'
+  summary_enabled:
+    description: 'Write PPU status and card-hours metrics to the GitHub Job Summary.'
+    required: false
+    default: 'true'
 
 outputs:
   job_name:
@@ -115,6 +119,15 @@ outputs:
   duration_seconds:
     description: '作业运行时长（秒）'
     value: ${{ steps.submit.outputs.duration_seconds }}
+  queue_duration_seconds:
+    description: 'Time in seconds until all PPU pods are scheduled.'
+    value: ${{ steps.submit.outputs.queue_duration_seconds }}
+  occupied_ppu_card_hours:
+    description: 'PPU card-hours from pod scheduling until completion.'
+    value: ${{ steps.submit.outputs.occupied_ppu_card_hours }}
+  execution_ppu_card_hours:
+    description: 'PPU card-hours while worker containers are running.'
+    value: ${{ steps.submit.outputs.execution_ppu_card_hours }}
   task_pods:
     description: '所有 task pod 名称（逗号分隔）'
     value: ${{ steps.submit.outputs.task_pods }}
@@ -302,6 +315,7 @@ runs:
         GITHUB_JOB_NAME: ${{ github.job }}
         JOB_NAME: ${{ steps.naming.outputs.job_name }}
         INPUT_DMESG_POLICY: ${{ inputs.dmesg_policy }}
+        INPUT_SUMMARY_ENABLED: ${{ inputs.summary_enabled }}
         USER_ENV_JSON: ${{ toJSON(env) }}
       run: bash "$GITHUB_ACTION_PATH/scripts/submit.sh"
 

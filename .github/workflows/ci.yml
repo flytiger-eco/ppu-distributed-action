@@ -127,10 +127,17 @@ jobs:
           JOB_NAME: ${{ steps.ppu.outputs.job_name }}
           JOB_STATUS: ${{ steps.ppu.outputs.job_status }}
           TASK_PODS: ${{ steps.ppu.outputs.task_pods }}
+          QUEUE_DURATION_SECONDS: ${{ steps.ppu.outputs.queue_duration_seconds }}
+          OCCUPIED_PPU_CARD_HOURS: ${{ steps.ppu.outputs.occupied_ppu_card_hours }}
+          EXECUTION_PPU_CARD_HOURS: ${{ steps.ppu.outputs.execution_ppu_card_hours }}
         run: |
           echo "job_name=${JOB_NAME} job_status=${JOB_STATUS} task_pods=${TASK_PODS}"
+          echo "queue_duration_seconds=${QUEUE_DURATION_SECONDS} occupied_ppu_card_hours=${OCCUPIED_PPU_CARD_HOURS} execution_ppu_card_hours=${EXECUTION_PPU_CARD_HOURS}"
           test -n "$JOB_NAME"
           test "$JOB_STATUS" = succeeded
+          [[ "$QUEUE_DURATION_SECONDS" =~ ^[0-9]+$ ]]
+          [[ "$OCCUPIED_PPU_CARD_HOURS" =~ ^[0-9]+\.[0-9]{4}$ ]]
+          [[ "$EXECUTION_PPU_CARD_HOURS" =~ ^[0-9]+\.[0-9]{4}$ ]]
 
   ppu-resource-defaults:
     name: Default resources for ${{ matrix.board }}
