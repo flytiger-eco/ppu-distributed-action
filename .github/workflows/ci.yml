@@ -55,7 +55,7 @@ jobs:
           while IFS= read -r script; do
             echo "Checking ${script}"
             bash -n "$script"
-          done < <(git ls-files 'scripts/*.sh')
+          done < <(git ls-files 'scripts/*.sh' '.github/scripts/*.sh')
 
       - name: Test resource naming
         shell: bash
@@ -108,16 +108,20 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Verify ${{ matrix.scenario }}
-        uses: ./
-        with:
-          nnodes: ${{ matrix.nnodes }}
-          nproc_per_node: ${{ matrix.cards }}
-          node_selector: board-type=${{ matrix.board }}
-          image: ${{ env.IMAGE }}
-          command: ${{ env.COMMAND }}
-          namespace: ${{ env.NAMESPACE }}
-          dmesg_policy: always
-          timeout_minutes: 10
+        shell: bash
+        env:
+          INPUT_NNODES: ${{ matrix.nnodes }}
+          INPUT_NPROC_PER_NODE: ${{ matrix.cards }}
+          INPUT_NODE_SELECTOR: board-type=${{ matrix.board }}
+          INPUT_IMAGE: ${{ env.IMAGE }}
+          INPUT_COMMAND: ${{ env.COMMAND }}
+          INPUT_NAMESPACE: ${{ env.NAMESPACE }}
+          INPUT_DMESG_POLICY: always
+          INPUT_TIMEOUT_MINUTES: '10'
+          MATRIX_JSON: ${{ toJSON(matrix) }}
+          PPU_RUNNER_NAME: ${{ runner.name }}
+          GITHUB_JOB_NAME: ${{ github.job }}
+        run: bash .github/scripts/run-ppu-test.sh
 
   ppu-resource-defaults:
     name: Default resources for ${{ matrix.board }}
@@ -142,17 +146,20 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Verify default limits
-        uses: ./
-        with:
-          nnodes: 0
-          nproc_per_node: 1
-          job_suffix: resource-${{ matrix.board }}
-          node_selector: board-type=${{ matrix.board }}
-          image: ${{ env.IMAGE }}
-          namespace: ${{ env.NAMESPACE }}
-          dmesg_policy: always
-          timeout_minutes: 10
-          command: |
+        shell: bash
+        env:
+          INPUT_NNODES: '0'
+          INPUT_NPROC_PER_NODE: '1'
+          INPUT_JOB_SUFFIX: resource-${{ matrix.board }}
+          INPUT_NODE_SELECTOR: board-type=${{ matrix.board }}
+          INPUT_IMAGE: ${{ env.IMAGE }}
+          INPUT_NAMESPACE: ${{ env.NAMESPACE }}
+          INPUT_DMESG_POLICY: always
+          INPUT_TIMEOUT_MINUTES: '10'
+          MATRIX_JSON: ${{ toJSON(matrix) }}
+          PPU_RUNNER_NAME: ${{ runner.name }}
+          GITHUB_JOB_NAME: ${{ github.job }}
+          INPUT_COMMAND: |
             ${{ env.COMMAND }}
             python3 - <<'PY'
             from pathlib import Path
@@ -175,6 +182,7 @@ jobs:
             if memory == "max" or int(memory) != expected_memory:
                 raise SystemExit(f"memory limit mismatch: expected={expected_memory}, actual={memory}")
             PY
+        run: bash .github/scripts/run-ppu-test.sh
 
   ppu-gang-block:
     name: Block an unsatisfied 8-node 810E gang
@@ -189,17 +197,20 @@ jobs:
 
       - name: Request eight 810E nodes
         id: gang
-        uses: ./
+        shell: bash
         continue-on-error: true
-        with:
-          nnodes: 8
-          nproc_per_node: 16
-          node_selector: board-type=OAM-810E
-          image: ${{ env.IMAGE }}
-          command: echo 'The blocked gang must not start' && exit 1
-          namespace: ${{ env.NAMESPACE }}
-          dmesg_policy: on_failure
-          timeout_minutes: 3
+        env:
+          INPUT_NNODES: '8'
+          INPUT_NPROC_PER_NODE: '16'
+          INPUT_NODE_SELECTOR: board-type=OAM-810E
+          INPUT_IMAGE: ${{ env.IMAGE }}
+          INPUT_COMMAND: echo 'The blocked gang must not start' && exit 1
+          INPUT_NAMESPACE: ${{ env.NAMESPACE }}
+          INPUT_DMESG_POLICY: on_failure
+          INPUT_TIMEOUT_MINUTES: '3'
+          PPU_RUNNER_NAME: ${{ runner.name }}
+          GITHUB_JOB_NAME: ${{ github.job }}
+        run: bash .github/scripts/run-ppu-test.sh
 
       - name: Confirm the gang timed out
         shell: bash
@@ -256,20 +267,24 @@ jobs:
           path: downloaded-artifact/
 
       - name: Verify source and artifact staging
-        uses: ./
-        with:
-          nnodes: ${{ matrix.nnodes }}
-          nproc_per_node: ${{ matrix.cards }}
-          node_selector: board-type=ZW-M890P
-          image: ${{ env.IMAGE }}
-          namespace: ${{ env.NAMESPACE }}
-          dmesg_policy: always
-          timeout_minutes: 10
-          artifact_paths: downloaded-artifact
-          command: |
+        shell: bash
+        env:
+          INPUT_NNODES: ${{ matrix.nnodes }}
+          INPUT_NPROC_PER_NODE: ${{ matrix.cards }}
+          INPUT_NODE_SELECTOR: board-type=ZW-M890P
+          INPUT_IMAGE: ${{ env.IMAGE }}
+          INPUT_NAMESPACE: ${{ env.NAMESPACE }}
+          INPUT_DMESG_POLICY: always
+          INPUT_TIMEOUT_MINUTES: '10'
+          ARTIFACT_PATHS: downloaded-artifact
+          MATRIX_JSON: ${{ toJSON(matrix) }}
+          PPU_RUNNER_NAME: ${{ runner.name }}
+          GITHUB_JOB_NAME: ${{ github.job }}
+          INPUT_COMMAND: |
             set -euo pipefail
             test -f /workspace/source/action.yml
             test -f /workspace/source/README.md
             test -f /workspace/source/downloaded-artifact/verify-marker.txt
             grep -qx ppu-action-ci /workspace/source/downloaded-artifact/verify-marker.txt
             ppu-smi
+        run: bash .github/scripts/run-ppu-test.sh
