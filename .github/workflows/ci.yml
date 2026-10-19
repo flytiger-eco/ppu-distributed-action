@@ -1,0 +1,76 @@
+name: Action CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate composite action
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate action metadata
+        shell: bash
+        run: |
+          ruby <<'RUBY'
+          require "yaml"
+
+          metadata = YAML.safe_load(File.read("action.yml"), aliases: true)
+          abort "action.yml must define a composite action" unless metadata.dig("runs", "using") == "composite"
+          abort "action.yml must define composite steps" unless metadata.dig("runs", "steps").is_a?(Array)
+
+          %w[image command].each do |input|
+            abort "#{input} must be a required input" unless metadata.dig("inputs", input, "required") == true
+          end
+          RUBY
+
+      - name: Check shell syntax
+        shell: bash
+        run: |
+          while IFS= read -r script; do
+            echo "Checking ${script}"
+            bash -n "$script"
+          done < <(git ls-files 'scripts/*.sh')
+
+      - name: Test resource naming
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          name_one=$(env \
+            GITHUB_REPOSITORY_OWNER=flytiger-eco \
+            GITHUB_JOB_NAME=train \
+            GITHUB_RUN_ID=123456 \
+            GITHUB_RUN_ATTEMPT=1 \
+            PPU_RUNNER_NAME=runner-a \
+            MATRIX_JSON='{"model":"llama"}' \
+            bash scripts/job-name.sh)
+          name_repeat=$(env \
+            GITHUB_REPOSITORY_OWNER=flytiger-eco \
+            GITHUB_JOB_NAME=train \
+            GITHUB_RUN_ID=123456 \
+            GITHUB_RUN_ATTEMPT=1 \
+            PPU_RUNNER_NAME=runner-a \
+            MATRIX_JSON='{"model":"llama"}' \
+            bash scripts/job-name.sh)
+          name_other_runner=$(env \
+            GITHUB_REPOSITORY_OWNER=flytiger-eco \
+            GITHUB_JOB_NAME=train \
+            GITHUB_RUN_ID=123456 \
+            GITHUB_RUN_ATTEMPT=1 \
+            PPU_RUNNER_NAME=runner-b \
+            MATRIX_JSON='{"model":"llama"}' \
+            bash scripts/job-name.sh)
+
+          [[ "$name_one" == "$name_repeat" ]]
+          [[ "$name_one" != "$name_other_runner" ]]
+          [[ "$name_one" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?-[a-f0-9]{6}$ ]]
+          (( ${#name_one} <= 52 ))
