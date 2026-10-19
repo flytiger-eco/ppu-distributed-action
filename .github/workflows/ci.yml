@@ -42,7 +42,8 @@ jobs:
 
           metadata = YAML.safe_load(File.read("action.yml"), aliases: true)
           abort "action.yml must define a composite action" unless metadata.dig("runs", "using") == "composite"
-          abort "action.yml must define composite steps" unless metadata.dig("runs", "steps").is_a?(Array)
+          steps = metadata.dig("runs", "steps")
+          abort "action.yml must define composite steps" unless steps.is_a?(Array) && !steps.empty?
 
           %w[image command].each do |input|
             abort "#{input} must be a required input" unless metadata.dig("inputs", input, "required") == true
@@ -55,7 +56,7 @@ jobs:
           while IFS= read -r script; do
             echo "Checking ${script}"
             bash -n "$script"
-          done < <(git ls-files 'scripts/*.sh')
+          done < <(git ls-files '*.sh')
 
       - name: Test resource naming
         shell: bash
@@ -267,11 +268,11 @@ jobs:
       - name: Check out action
         uses: actions/checkout@v4
 
-      - name: Download fixture
+      - name: Download fixture outside workspace
         uses: actions/download-artifact@v4
         with:
           name: ppu-action-ci-fixture
-          path: downloaded-artifact/
+          path: ${{ runner.temp }}/downloaded-artifact
 
       - name: Verify source and artifact staging
         uses: $/
@@ -283,7 +284,7 @@ jobs:
           node_selector: board-type=ZW-M890P
           dmesg_policy: always
           timeout_minutes: 10
-          artifact_paths: downloaded-artifact
+          artifact_paths: ${{ runner.temp }}/downloaded-artifact
           command: |
             set -euo pipefail
             test -f /workspace/source/action.yml
