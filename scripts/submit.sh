@@ -953,9 +953,15 @@ if [ -f "${TASK_FILE:-}" ] && command -v jq >/dev/null 2>&1; then
     --argjson execution_ppu_card_seconds "$EXECUTION_PPU_CARD_SECONDS" \
     --argjson occupied_ppu_card_hours "$OCCUPIED_PPU_CARD_HOURS" \
     --argjson execution_ppu_card_hours "$EXECUTION_PPU_CARD_HOURS" \
+    --argjson unscheduled_pods "$UNSCHEDULED_PODS" \
+    --arg pod_queue "$POD_QUEUE" \
+    --arg queue_reason "$QUEUE_REASON" \
     '.end_time = $end_time
      | .status = $status
      | .queue_duration_seconds = $queue_duration_seconds
+     | .unscheduled_pods = $unscheduled_pods
+     | .pod_queue = ($pod_queue | if . == "" then [] else split(",") | map(split(":") | {pod: .[0], queue_seconds: (.[1] | tonumber), scheduled: (.[2] == "1")}) end)
+     | .queue_reason = $queue_reason
      | .occupied_ppu_card_seconds = $occupied_ppu_card_seconds
      | .execution_ppu_card_seconds = $execution_ppu_card_seconds
      | .occupied_ppu_card_hours = $occupied_ppu_card_hours
