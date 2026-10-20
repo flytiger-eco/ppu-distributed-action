@@ -2,7 +2,7 @@
 set -uo pipefail
 
 log_info()  { echo "[cleanup] $*"; }
-log_warn()  { echo "::warning::[cleanup] $*"; }
+log_warn()  { echo "[cleanup] [warn] $*"; }
 log_error() { echo "::error::[cleanup] $*"; }
 
 NAMESPACE="${INPUT_NAMESPACE:-default}"

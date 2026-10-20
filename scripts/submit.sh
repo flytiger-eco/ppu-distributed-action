@@ -8,7 +8,7 @@ MANIFEST_DIR="/tmp/training-manifests"
 mkdir -p "$MANIFEST_DIR"
 
 log_info()  { echo "$*"; }
-log_warn()  { echo "::warning::$*"; }
+log_warn()  { echo "[warn] $*"; }
 log_error() { echo "::error::$*"; }
 
 set_output() {
@@ -23,6 +23,7 @@ set_output() {
 set_output "job_status" "unknown"
 set_output "duration_seconds" "0"
 set_output "queue_duration_seconds" "0"
+set_output "unscheduled_pods" "0"
 set_output "occupied_ppu_card_hours" "0.0000"
 set_output "execution_ppu_card_hours" "0.0000"
 
@@ -799,13 +800,24 @@ while true; do
   fi
 
   if [ "$ELAPSED" -ge "$PENDING_WARN_THRESHOLD" ] && [ "$PENDING_WARNED" = false ] && [ "$PENDING" -gt 0 ]; then
-    log_warn "仍有 ${PENDING} 个 Pod 处于 Pending 超过 5 分钟，可能资源不足或调度受阻。"
-    echo "::group::FailedScheduling events"
-    kubectl get events -n "$NAMESPACE" \
-      --field-selector "reason=FailedScheduling" \
-      --sort-by='.lastTimestamp' 2>/dev/null | tail -10 || true
-    echo "::endgroup::"
-    PENDING_WARNED=true
+    # Pending 也包含已调度、正在拉镜像的 Pod，排队只看未调度的
+    UNSCHEDULED=$(kubectl get pods -n "$NAMESPACE" -l "ppu-job=$JOB_NAME" -o json 2>/dev/null \
+      | jq '[.items[] | select([.status.conditions[]? | select(.type == "PodScheduled" and .status == "True")] | length == 0)] | length' 2>/dev/null || echo 0)
+    if [ "${UNSCHEDULED:-0}" -gt 0 ]; then
+      QUEUE_REASON=$(kubectl get events -n "$NAMESPACE" --field-selector "reason=FailedScheduling" -o json 2>/dev/null \
+        | jq -r --arg job "$JOB_NAME" '
+            [.items[] | select(.involvedObject.name | startswith($job))]
+            | sort_by(.lastTimestamp // .eventTime // "") | last | .message // empty' 2>/dev/null \
+        | tr '\r\n' '  ' | sed 's/ *$//' | cut -c1-300 || true)
+      QUEUE_REASON="${QUEUE_REASON//\%/%25}"
+      echo "::warning::PPU queue: ${UNSCHEDULED}/${TOTAL_PODS} pod(s) still waiting for PPU scheduling after $(( ELAPSED / 60 ))m. Reason: ${QUEUE_REASON:-no FailedScheduling event yet}"
+      echo "::group::FailedScheduling events"
+      kubectl get events -n "$NAMESPACE" \
+        --field-selector "reason=FailedScheduling" \
+        --sort-by='.lastTimestamp' 2>/dev/null | tail -10 || true
+      echo "::endgroup::"
+      PENDING_WARNED=true
+    fi
   fi
 
   echo "  ${ELAPSED}s/${TIMEOUT}s - pending=$PENDING running=$RUNNING succeeded=$SUCCEEDED failed=$FAILED"
@@ -824,6 +836,7 @@ POD_SNAPSHOT=$(kubectl get pods -n "$NAMESPACE" -l "ppu-job=$JOB_NAME" -o json 2
 QUEUE_START_EPOCH=0
 QUEUE_END_EPOCH=0
 QUEUE_DURATION_SECONDS=0
+UNSCHEDULED_PODS=0
 OCCUPIED_PPU_CARD_SECONDS=0
 EXECUTION_PPU_CARD_SECONDS=0
 
@@ -846,6 +859,8 @@ while IFS='|' read -r _pod_name _created_at _scheduled_at _started_at _finished_
   if [ -n "$_finished_at" ]; then
     _resource_end_epoch=$(date -d "$_finished_at" +%s 2>/dev/null || echo "$METRICS_END_EPOCH")
   fi
+
+  [ -z "$_scheduled_at" ] && UNSCHEDULED_PODS=$(( UNSCHEDULED_PODS + 1 ))
 
   if [ -n "$_scheduled_at" ]; then
     _scheduled_epoch=$(date -d "$_scheduled_at" +%s 2>/dev/null || echo 0)
@@ -887,6 +902,7 @@ EXECUTION_PPU_CARD_HOURS=$(awk -v seconds="$EXECUTION_PPU_CARD_SECONDS" 'BEGIN {
 set_output "job_status" "$FINAL_STATUS"
 set_output "duration_seconds" "$DURATION"
 set_output "queue_duration_seconds" "$QUEUE_DURATION_SECONDS"
+set_output "unscheduled_pods" "$UNSCHEDULED_PODS"
 set_output "occupied_ppu_card_hours" "$OCCUPIED_PPU_CARD_HOURS"
 set_output "execution_ppu_card_hours" "$EXECUTION_PPU_CARD_HOURS"
 

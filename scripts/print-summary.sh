@@ -18,12 +18,17 @@ pods="${NNODES:-0}"
 cards="${NPROC_PER_NODE:-1}"
 [[ "$cards" =~ ^[0-9]+$ ]] || cards=1
 
+queue="$(format_duration "${QUEUE_DURATION_SECONDS:-0}")"
+unscheduled="${UNSCHEDULED_PODS:-0}"
+[[ "$unscheduled" =~ ^[0-9]+$ ]] || unscheduled=0
+[ "$unscheduled" -gt 0 ] && queue="${queue} (${unscheduled}/${pods} pod(s) never scheduled)"
+
 echo "::group::PPU usage summary"
 printf '%-28s %s\n' \
   "Job name:" "${JOB_NAME:-}" \
   "Status:" "$JOB_STATUS" \
   "PPU topology:" "${pods} pod(s) x ${cards} PPU = $(( pods * cards )) PPU" \
-  "Queue duration:" "$(format_duration "${QUEUE_DURATION_SECONDS:-0}")" \
+  "Queue duration:" "$queue" \
   "Job duration:" "$(format_duration "${DURATION_SECONDS:-0}")" \
   "PPU card-hours (occupied):" "${OCCUPIED_PPU_CARD_HOURS:-0.0000}" \
   "PPU card-hours (execution):" "${EXECUTION_PPU_CARD_HOURS:-0.0000}" \
@@ -35,4 +40,4 @@ echo "  PPU card-hours (occupied): sum of each pod's PPU count multiplied by the
 echo "  PPU card-hours (execution): sum of each pod's PPU count multiplied by the worker container running time."
 echo "::endgroup::"
 
-echo "::notice::PPU usage: ${JOB_STATUS} | ${pods} pod(s) x ${cards} PPU | queue $(format_duration "${QUEUE_DURATION_SECONDS:-0}") | occupied ${OCCUPIED_PPU_CARD_HOURS:-0.0000} card-hours | execution ${EXECUTION_PPU_CARD_HOURS:-0.0000} card-hours"
+echo "::notice::PPU usage: ${JOB_STATUS} | ${pods} pod(s) x ${cards} PPU | queue ${queue} | occupied ${OCCUPIED_PPU_CARD_HOURS:-0.0000} card-hours | execution ${EXECUTION_PPU_CARD_HOURS:-0.0000} card-hours"

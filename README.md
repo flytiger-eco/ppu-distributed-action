@@ -17,6 +17,7 @@ All PPU resources are requested by the worker pods it creates.
 - Default CPU/memory limits derived from board type and card count.
 - Live log streaming, explicit pending status, timeout handling and cancellation-safe cleanup.
 - One-line `PPU usage` notice on the run page plus a collapsed usage summary in the job log, covering queue time and occupied/execution PPU card-hours; the GitHub Job Summary is left untouched.
+- A `PPU queue` warning with the latest scheduling failure reason when pods stay unscheduled for more than five minutes. Apart from these two and errors, the action creates no run annotations.
 - Optional kernel log (`dmesg`) collection from worker nodes.
 
 ## Usage
