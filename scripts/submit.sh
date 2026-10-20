@@ -11,14 +11,6 @@ log_info()  { echo "::notice::$*"; }
 log_warn()  { echo "::warning::$*"; }
 log_error() { echo "::error::$*"; }
 
-format_duration() {
-  local total_seconds="$1"
-  printf '%dh %dm %ds' \
-    "$(( total_seconds / 3600 ))" \
-    "$(( total_seconds % 3600 / 60 ))" \
-    "$(( total_seconds % 60 ))"
-}
-
 set_output() {
   if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "$1=$2" >> "$GITHUB_OUTPUT"
@@ -74,20 +66,11 @@ SOURCE_STAGE_DIR="${SOURCE_STAGE_DIR:-}"
 SOURCE_MOUNT_PATH="${INPUT_SOURCE_DIR:-/workspace/source}"
 CONTAINER_OPTIONS="${CONTAINER_OPTIONS:-}"
 DMESG_POLICY="${INPUT_DMESG_POLICY:-never}"
-SUMMARY_ENABLED="${INPUT_SUMMARY_ENABLED:-true}"
 
 case "$DMESG_POLICY" in
   never|on_failure|always) ;;
   *)
     log_error "dmesg_policy 取值必须为 never/on_failure/always，实际为 '${DMESG_POLICY}'"
-    exit 1
-    ;;
-esac
-
-case "$SUMMARY_ENABLED" in
-  true|false) ;;
-  *)
-    log_error "summary_enabled 取值必须为 true/false，实际为 '${SUMMARY_ENABLED}'"
     exit 1
     ;;
 esac
@@ -918,40 +901,11 @@ for pod in $PODS; do
 done
 set_output "task_pods" "$TASK_PODS"
 
-QUEUE_DURATION_DISPLAY=$(format_duration "$QUEUE_DURATION_SECONDS")
-DURATION_DISPLAY=$(format_duration "$DURATION")
-
 log_info "=== 作业执行汇总 ==="
-log_info "Job:                         $JOB_NAME"
-log_info "Status:                      $FINAL_STATUS"
-log_info "Duration:                    $DURATION_DISPLAY"
-log_info "Queue duration:              $QUEUE_DURATION_DISPLAY"
-log_info "PPU card-hours (occupied):   $OCCUPIED_PPU_CARD_HOURS"
-log_info "PPU card-hours (execution):  $EXECUTION_PPU_CARD_HOURS"
-log_info "Pods:                        $TASK_PODS"
-
-if [ "$SUMMARY_ENABLED" = "true" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-  cat >> "$GITHUB_STEP_SUMMARY" <<SUMMARY_EOF
-## PPU Job Summary
-
-| Metric | Value |
-|---|---|
-| Job name | \`${JOB_NAME}\` |
-| Status | ${FINAL_STATUS} |
-| PPU topology | ${NNODES} pod(s) × ${NPROC} PPU = $(( NNODES * NPROC )) PPU |
-| Queue duration | ${QUEUE_DURATION_DISPLAY} |
-| Job duration | ${DURATION_DISPLAY} |
-| PPU card-hours (occupied) | ${OCCUPIED_PPU_CARD_HOURS} |
-| PPU card-hours (execution) | ${EXECUTION_PPU_CARD_HOURS} |
-| Pods | \`${TASK_PODS}\` |
-
-**Metric definitions**
-
-- **Queue duration**: Time from the first pod creation until all PPU pods are scheduled. If a pod is never scheduled, it is measured until the job ends.
-- **PPU card-hours (occupied)**: Sum of each pod's PPU count multiplied by the time from scheduling to completion. This includes image pulling and container startup.
-- **PPU card-hours (execution)**: Sum of each pod's PPU count multiplied by the worker container running time.
-SUMMARY_EOF
-fi
+log_info "Job:      $JOB_NAME"
+log_info "Status:   $FINAL_STATUS"
+log_info "Duration: ${DURATION}s"
+log_info "Pods:     $TASK_PODS"
 
 # 直接更新任务记录终态（不依赖 cleanup.sh 的 output 传递）
 if [ -f "${TASK_FILE:-}" ] && command -v jq >/dev/null 2>&1; then

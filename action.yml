@@ -104,10 +104,6 @@ inputs:
       always 无论结果均保留。日志按作业执行时间窗口保存到 NAS。
     required: false
     default: 'never'
-  summary_enabled:
-    description: 'Write PPU status and card-hours metrics to the GitHub Job Summary.'
-    required: false
-    default: 'true'
 
 outputs:
   job_name:
@@ -315,7 +311,6 @@ runs:
         GITHUB_JOB_NAME: ${{ github.job }}
         JOB_NAME: ${{ steps.naming.outputs.job_name }}
         INPUT_DMESG_POLICY: ${{ inputs.dmesg_policy }}
-        INPUT_SUMMARY_ENABLED: ${{ inputs.summary_enabled }}
         USER_ENV_JSON: ${{ toJSON(env) }}
       run: bash "$GITHUB_ACTION_PATH/scripts/submit.sh"
 
@@ -331,6 +326,21 @@ runs:
         INPUT_JOB_STATUS: ${{ steps.submit.outputs.job_status }}
         SOURCE_STAGE_DIR: ${{ env.SOURCE_STAGE_DIR }}
       run: bash "$GITHUB_ACTION_PATH/scripts/cleanup.sh"
+
+    - name: Print PPU usage summary
+      if: always()
+      shell: bash
+      env:
+        JOB_NAME: ${{ steps.naming.outputs.job_name }}
+        JOB_STATUS: ${{ steps.submit.outputs.job_status }}
+        NNODES: ${{ inputs.nnodes }}
+        NPROC_PER_NODE: ${{ inputs.nproc_per_node }}
+        DURATION_SECONDS: ${{ steps.submit.outputs.duration_seconds }}
+        QUEUE_DURATION_SECONDS: ${{ steps.submit.outputs.queue_duration_seconds }}
+        OCCUPIED_PPU_CARD_HOURS: ${{ steps.submit.outputs.occupied_ppu_card_hours }}
+        EXECUTION_PPU_CARD_HOURS: ${{ steps.submit.outputs.execution_ppu_card_hours }}
+        TASK_PODS: ${{ steps.submit.outputs.task_pods }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/print-summary.sh"
 
     - name: Print dmesg logs
       if: always() && inputs.dmesg_policy != 'never'
