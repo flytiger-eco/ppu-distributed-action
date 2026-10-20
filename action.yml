@@ -338,6 +338,8 @@ runs:
         DURATION_SECONDS: ${{ steps.submit.outputs.duration_seconds }}
         QUEUE_DURATION_SECONDS: ${{ steps.submit.outputs.queue_duration_seconds }}
         UNSCHEDULED_PODS: ${{ steps.submit.outputs.unscheduled_pods }}
+        POD_QUEUE: ${{ steps.submit.outputs.pod_queue }}
+        QUEUE_REASON: ${{ steps.submit.outputs.queue_reason }}
         OCCUPIED_PPU_CARD_HOURS: ${{ steps.submit.outputs.occupied_ppu_card_hours }}
         EXECUTION_PPU_CARD_HOURS: ${{ steps.submit.outputs.execution_ppu_card_hours }}
         TASK_PODS: ${{ steps.submit.outputs.task_pods }}

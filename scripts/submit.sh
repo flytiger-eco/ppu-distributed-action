@@ -24,6 +24,8 @@ set_output "job_status" "unknown"
 set_output "duration_seconds" "0"
 set_output "queue_duration_seconds" "0"
 set_output "unscheduled_pods" "0"
+set_output "pod_queue" ""
+set_output "queue_reason" ""
 set_output "occupied_ppu_card_hours" "0.0000"
 set_output "execution_ppu_card_hours" "0.0000"
 
@@ -809,8 +811,7 @@ while true; do
             [.items[] | select(.involvedObject.name | startswith($job))]
             | sort_by(.lastTimestamp // .eventTime // "") | last | .message // empty' 2>/dev/null \
         | tr '\r\n' '  ' | sed 's/ *$//' | cut -c1-300 || true)
-      QUEUE_REASON="${QUEUE_REASON//\%/%25}"
-      echo "::warning::PPU queue: ${UNSCHEDULED}/${TOTAL_PODS} pod(s) still waiting for PPU scheduling after $(( ELAPSED / 60 ))m. Reason: ${QUEUE_REASON:-no FailedScheduling event yet}"
+      log_warn "PPU queue: ${UNSCHEDULED}/${TOTAL_PODS} pod(s) still waiting for PPU scheduling after $(( ELAPSED / 60 ))m. Reason: ${QUEUE_REASON:-no FailedScheduling event yet}"
       echo "::group::FailedScheduling events"
       kubectl get events -n "$NAMESPACE" \
         --field-selector "reason=FailedScheduling" \
@@ -837,6 +838,8 @@ QUEUE_START_EPOCH=0
 QUEUE_END_EPOCH=0
 QUEUE_DURATION_SECONDS=0
 UNSCHEDULED_PODS=0
+LONG_QUEUE_PODS=0
+POD_QUEUE=""
 OCCUPIED_PPU_CARD_SECONDS=0
 EXECUTION_PPU_CARD_SECONDS=0
 
@@ -853,6 +856,12 @@ while IFS='|' read -r _pod_name _created_at _scheduled_at _started_at _finished_
       _pod_queue_end_epoch=$(date -d "$_scheduled_at" +%s 2>/dev/null || echo "$METRICS_END_EPOCH")
     fi
     [ "$_pod_queue_end_epoch" -gt "$QUEUE_END_EPOCH" ] && QUEUE_END_EPOCH=$_pod_queue_end_epoch
+    _pod_queue_seconds=$(( _pod_queue_end_epoch - _created_epoch ))
+    [ "$_pod_queue_seconds" -lt 0 ] && _pod_queue_seconds=0
+    _pod_scheduled=1
+    [ -z "$_scheduled_at" ] && _pod_scheduled=0
+    [ "$_pod_queue_seconds" -ge "$PENDING_WARN_THRESHOLD" ] && LONG_QUEUE_PODS=$(( LONG_QUEUE_PODS + 1 ))
+    POD_QUEUE="${POD_QUEUE:+${POD_QUEUE},}${_pod_name#"${JOB_NAME}-"}:${_pod_queue_seconds}:${_pod_scheduled}"
   fi
 
   _resource_end_epoch=$METRICS_END_EPOCH
@@ -880,8 +889,8 @@ while IFS='|' read -r _pod_name _created_at _scheduled_at _started_at _finished_
     fi
   fi
 done < <(
-  printf '%s' "$POD_SNAPSHOT" | jq -r '
-    .items[] |
+  printf '%s' "$POD_SNAPSHOT" | jq -r --arg prefix "${JOB_NAME}-worker-" '
+    .items | sort_by((.metadata.name | ltrimstr($prefix) | tonumber?) // 0) | .[] |
     [
       .metadata.name,
       (.metadata.creationTimestamp // ""),
@@ -896,6 +905,15 @@ if [ "$QUEUE_START_EPOCH" -gt 0 ] && [ "$QUEUE_END_EPOCH" -ge "$QUEUE_START_EPOC
   QUEUE_DURATION_SECONDS=$(( QUEUE_END_EPOCH - QUEUE_START_EPOCH ))
 fi
 
+QUEUE_REASON=""
+if [ "$LONG_QUEUE_PODS" -gt 0 ] || [ "$UNSCHEDULED_PODS" -gt 0 ]; then
+  QUEUE_REASON=$(kubectl get events -n "$NAMESPACE" --field-selector "reason=FailedScheduling" -o json 2>/dev/null \
+    | jq -r --arg job "$JOB_NAME" '
+        [.items[] | select(.involvedObject.name | startswith($job))]
+        | sort_by(.lastTimestamp // .eventTime // "") | last | .message // empty' 2>/dev/null \
+    | tr '\r\n' '  ' | sed 's/ *$//' | cut -c1-300 || true)
+fi
+
 OCCUPIED_PPU_CARD_HOURS=$(awk -v seconds="$OCCUPIED_PPU_CARD_SECONDS" 'BEGIN { printf "%.4f", seconds / 3600 }')
 EXECUTION_PPU_CARD_HOURS=$(awk -v seconds="$EXECUTION_PPU_CARD_SECONDS" 'BEGIN { printf "%.4f", seconds / 3600 }')
 
@@ -903,6 +921,8 @@ set_output "job_status" "$FINAL_STATUS"
 set_output "duration_seconds" "$DURATION"
 set_output "queue_duration_seconds" "$QUEUE_DURATION_SECONDS"
 set_output "unscheduled_pods" "$UNSCHEDULED_PODS"
+set_output "pod_queue" "$POD_QUEUE"
+set_output "queue_reason" "$QUEUE_REASON"
 set_output "occupied_ppu_card_hours" "$OCCUPIED_PPU_CARD_HOURS"
 set_output "execution_ppu_card_hours" "$EXECUTION_PPU_CARD_HOURS"
 
