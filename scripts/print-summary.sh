@@ -34,3 +34,5 @@ echo "  Queue duration: time from the first pod creation until all PPU pods are 
 echo "  PPU card-hours (occupied): sum of each pod's PPU count multiplied by the time from scheduling to completion, including image pulling and container startup."
 echo "  PPU card-hours (execution): sum of each pod's PPU count multiplied by the worker container running time."
 echo "::endgroup::"
+
+echo "::notice title=PPU usage::${JOB_STATUS} | ${pods} pod(s) x ${cards} PPU | queue $(format_duration "${QUEUE_DURATION_SECONDS:-0}") | occupied ${OCCUPIED_PPU_CARD_HOURS:-0.0000} card-hours | execution ${EXECUTION_PPU_CARD_HOURS:-0.0000} card-hours"

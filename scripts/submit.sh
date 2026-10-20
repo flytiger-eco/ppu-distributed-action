@@ -7,7 +7,7 @@ MANIFEST_DIR="/tmp/training-manifests"
 
 mkdir -p "$MANIFEST_DIR"
 
-log_info()  { echo "::notice::$*"; }
+log_info()  { echo "$*"; }
 log_warn()  { echo "::warning::$*"; }
 log_error() { echo "::error::$*"; }
 
