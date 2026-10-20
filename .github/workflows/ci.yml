@@ -78,7 +78,6 @@ jobs:
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix:
         include:
           - scenario: 890P single card
@@ -141,11 +140,10 @@ jobs:
 
   ppu-resource-defaults:
     name: Default resources for ${{ matrix.board }}
-    needs: ppu-basic
+    needs: validate
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix:
         include:
           - board: ZW-M890P
@@ -198,7 +196,7 @@ jobs:
 
   ppu-gang-block:
     name: Block an unsatisfied 8-node 810E gang
-    needs: ppu-resource-defaults
+    needs: validate
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: k8s-runner-group-cpu-flytiger
     container:
@@ -253,13 +251,10 @@ jobs:
 
   ppu-artifact:
     name: Artifact staging on ${{ matrix.scenario }}
-    needs:
-      - ppu-gang-block
-      - prepare-artifact
+    needs: prepare-artifact
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix:
         include:
           - scenario: one card
