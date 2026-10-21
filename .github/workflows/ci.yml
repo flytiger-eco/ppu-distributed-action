@@ -44,6 +44,8 @@ jobs:
           abort "action.yml must define a composite action" unless metadata.dig("runs", "using") == "composite"
           steps = metadata.dig("runs", "steps")
           abort "action.yml must define composite steps" unless steps.is_a?(Array) && !steps.empty?
+          expressions = metadata.fetch("outputs").values.map { |output| output["value"] } + steps.flat_map { |step| (step["env"] || {}).values }
+          abort "status functions are only supported in step conditions" if expressions.any? { |value| value.to_s.match?(/\b(always|cancelled|failure|success)\(/) }
 
           %w[image command].each do |input|
             abort "#{input} must be a required input" unless metadata.dig("inputs", input, "required") == true
@@ -72,13 +74,16 @@ jobs:
           [[ "$name_one" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?-[a-f0-9]{6}$ ]]
           (( ${#name_one} <= 52 ))
 
+      - name: Test job lifecycle
+        shell: bash
+        run: python3 scripts/test-lifecycle.py
+
   ppu-basic:
     name: PPU ${{ matrix.scenario }}
     needs: validate
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix:
         include:
           - scenario: 890P single card
@@ -127,18 +132,84 @@ jobs:
           JOB_NAME: ${{ steps.ppu.outputs.job_name }}
           JOB_STATUS: ${{ steps.ppu.outputs.job_status }}
           TASK_PODS: ${{ steps.ppu.outputs.task_pods }}
+          QUEUE_DURATION_SECONDS: ${{ steps.ppu.outputs.queue_duration_seconds }}
+          OCCUPIED_PPU_CARD_HOURS: ${{ steps.ppu.outputs.occupied_ppu_card_hours }}
+          EXECUTION_PPU_CARD_HOURS: ${{ steps.ppu.outputs.execution_ppu_card_hours }}
         run: |
           echo "job_name=${JOB_NAME} job_status=${JOB_STATUS} task_pods=${TASK_PODS}"
+          echo "queue_duration_seconds=${QUEUE_DURATION_SECONDS} occupied_ppu_card_hours=${OCCUPIED_PPU_CARD_HOURS} execution_ppu_card_hours=${EXECUTION_PPU_CARD_HOURS}"
           test -n "$JOB_NAME"
           test "$JOB_STATUS" = succeeded
+          [[ "$QUEUE_DURATION_SECONDS" =~ ^[0-9]+$ ]]
+          [[ "$OCCUPIED_PPU_CARD_HOURS" =~ ^[0-9]+\.[0-9]{4}$ ]]
+          [[ "$EXECUTION_PPU_CARD_HOURS" =~ ^[0-9]+\.[0-9]{4}$ ]]
 
-  ppu-resource-defaults:
-    name: Default resources for ${{ matrix.board }}
-    needs: ppu-basic
+  ppu-lifecycle:
+    name: PPU ${{ matrix.scenario }} lifecycle
+    needs: validate
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
       fail-fast: false
-      max-parallel: 1
+      matrix:
+        include:
+          - scenario: instant success
+            command: "printf 'early-workload-log\\nfinal-workload-log\\n'; exit 0"
+            status: succeeded
+            outcome: success
+            timeout: 10
+          - scenario: business failure
+            command: "printf 'early-workload-log\\nfinal-workload-log\\n'; exit 7"
+            status: failed
+            outcome: failure
+            timeout: 10
+          - scenario: execution timeout
+            command: "printf 'early-workload-log\\n'; sleep 300"
+            status: timeout
+            outcome: failure
+            timeout: 3
+    runs-on: k8s-runner-group-cpu-flytiger
+    container:
+      image: ghcr.io/actions/actions-runner:latest
+    steps:
+      - name: Check out action
+        uses: actions/checkout@v4
+
+      - name: Exercise split lifecycle
+        id: lifecycle
+        continue-on-error: true
+        uses: $/
+        with:
+          image: ${{ env.IMAGE }}
+          namespace: ${{ env.NAMESPACE }}
+          nnodes: 0
+          nproc_per_node: 1
+          node_selector: board-type=ZW-M890P
+          timeout_minutes: ${{ matrix.timeout }}
+          command: ${{ matrix.command }}
+
+      - name: Verify lifecycle result and cleanup
+        shell: bash
+        env:
+          JOB_NAME: ${{ steps.lifecycle.outputs.job_name }}
+          JOB_STATUS: ${{ steps.lifecycle.outputs.job_status }}
+          OUTCOME: ${{ steps.lifecycle.outcome }}
+          EXPECTED_STATUS: ${{ matrix.status }}
+          EXPECTED_OUTCOME: ${{ matrix.outcome }}
+          EXECUTION_HOURS: ${{ steps.lifecycle.outputs.execution_ppu_card_hours }}
+        run: |
+          test "$JOB_STATUS" = "$EXPECTED_STATUS"
+          test "$OUTCOME" = "$EXPECTED_OUTCOME"
+          test -z "$(kubectl get pods -n "$NAMESPACE" -l "ppu-job=$JOB_NAME" -o name)"
+          if [ "$EXPECTED_STATUS" = timeout ]; then
+            awk -v hours="$EXECUTION_HOURS" 'BEGIN { exit !(hours > 0) }'
+          fi
+
+  ppu-resource-defaults:
+    name: Default resources for ${{ matrix.board }}
+    needs: validate
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    strategy:
+      fail-fast: false
       matrix:
         include:
           - board: ZW-M890P
@@ -191,7 +262,7 @@ jobs:
 
   ppu-gang-block:
     name: Block an unsatisfied 8-node 810E gang
-    needs: ppu-resource-defaults
+    needs: validate
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: k8s-runner-group-cpu-flytiger
     container:
@@ -246,13 +317,10 @@ jobs:
 
   ppu-artifact:
     name: Artifact staging on ${{ matrix.scenario }}
-    needs:
-      - ppu-gang-block
-      - prepare-artifact
+    needs: prepare-artifact
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix:
         include:
           - scenario: one card
