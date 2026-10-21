@@ -44,6 +44,8 @@ jobs:
           abort "action.yml must define a composite action" unless metadata.dig("runs", "using") == "composite"
           steps = metadata.dig("runs", "steps")
           abort "action.yml must define composite steps" unless steps.is_a?(Array) && !steps.empty?
+          expressions = metadata.fetch("outputs").values.map { |output| output["value"] } + steps.flat_map { |step| (step["env"] || {}).values }
+          abort "status functions are only supported in step conditions" if expressions.any? { |value| value.to_s.match?(/\b(always|cancelled|failure|success)\(/) }
 
           %w[image command].each do |input|
             abort "#{input} must be a required input" unless metadata.dig("inputs", input, "required") == true
